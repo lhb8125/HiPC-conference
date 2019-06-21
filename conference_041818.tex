@@ -8,6 +8,9 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{multirow}
+\usepackage{tikz}
+\newcommand*{\circled}[1]{\lower.7ex\hbox{\tikz\draw (0pt, 0pt)%
+    circle (.5em) node {\makebox[1em][c]{\small #1}};}}
 \def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
     T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
 \begin{document}
@@ -283,7 +286,15 @@ The data structure in MLB is a non-uniform multi-block structure. The coarsest b
 
 Finally, the finest block (sub-block) is decomposed based on the hardware of CG. The number of sub-block is set to a fixed value, 64, corresponding to the amount of CPEs of CG. The diagonal sub-block is "local" for the corresponding CPE and the off-diagonal sub-block is the CPE interface. The "local" data are loaded into LDM by DMA directly while the data in the interface are transferred by on-chip register communication because of the discreteness and sparsity. The blue filling curve in Fig. \ref{mlb(overview)} indicates the storage sequence of different blocks in memory. Generally, the priority rule is that the finer level block is prior to coarser ones and row block is prior to column block in the same level. Inside the sub-blocks, the face sequence is arbitrary. Taking advantage of the graph partition tool Metis, most face can be gathered in diagonal blocks for each level and interfaces can be minimized to a certain extent with load balance into consideration. So far we obtain an block-structured and organized data structure through MLB.
 
-As for the computation of diagonal block in CPEs, one CPE is in charge of the sub-blocks in the same row. To explain the computational pattern of CPEs, we take the Sparse Matrix-Vector multiply (SpMV) as example. The coefficient matrix $A$ with LDU format is stored as three arrays, $lower$, $upper$ and $diag$ .
+As for the computation of diagonal block in CPEs, one CPE is in charge of the sub-blocks in the same row. To explain the computational pattern of CPEs, we take the Sparse Matrix-Vector multiply (SpMV) as example. The coefficient matrix $A$ with LDU format is decomposed as three arrays, $lower$, $upper$ and $diag$, storing the lower triangle, upper triangle and diagonal data respectively. These data can be loaded into LDM through DMA because of its consecutiveness and sparsity in memory, while it is not appropriate to $x$ and $b$. The computation process of diagonal block in CPEs is presented in Fig. \ref{rlc} and the amount of CPEs is cut down to 4 for conciseness.
+\begin{figure}[tbp]
+\centerline{\includegraphics[width=0.49\textwidth]{rlc.pdf}}
+\caption{The computation process in CPEs: 1.Fetch "local" $x$, $b$ and $A$ through DMA with the topology owner $O$ and neighbor $N$; 2.Get $A$ in the lower triangle through Register-Level Communication (RLC); 3. Get $x$ in the off-diagonal sub-block through RLC; 4. Send $b$ in the off-diagonal sub-block to other CPEs through RLC.}
+\label{rlc}
+\end{figure}
+In our implementation, the data of the diagonal sub-blocks and off-diagonal sub-blocks are considered as "local" data and "global" data respectively. Firstly, local $x$ and $b$ are loaded into LDM through DMA. Also the data reside in the entries of the matrix including coefficients $A$, owner $O$ and neighbour $N$ (\textcircled{1}). Then we transfer the neighbor data $N$ from the upper triangle to the lower triangle through RLC, which is essential for the next step (\textcircled{2}). For the off-diagonal sub-block, $x$ cannot be loaded directly through DMA because of the limited LDM space and the redundancy of $x$, while they are stored in the LDM of other CPEs. Hence $x$ can be selected and communicated corresponding to the neighbor data $N$ in the last step and then we can obtain the "sparse" global $x$ for each CPE, the same as $A$ (\textcircled{3}). Now that the coefficient matrix $A$ and vector $x$ is loaded into LDM, we can perform SpMV operation in the CPEs and get the output vector $b$ with the same storage pattern as $x$. To avoid the write conflict between CPEs, $b$ need to be transferred to the corresponding CPEs through RLC (\textcircled{4}).
+
+As mentioned above, the unstructured mesh is decomposed into three level in MLB method. The values of coarsest level and finest level are determined by the main memory of CGs and the number of CPEs of CGs respectively.
 
 \subsubsection{test}
 
